@@ -83,7 +83,7 @@ int switch_mnt_ns(int pid) {
     close(fd);
 
     // fall back
-    if ((fd = open(mnt, O_RDONLY)) < 0)
+    if ((fd = open(mnt, O_RDONLY | O_NOATIME)) < 0)
         return 1;
     // Switch to its namespace
     ret = setns(fd, CLONE_NEWNS);

@@ -1,7 +1,7 @@
-id=magiskhide
-name=MagiskHide
-author=HuskyDG @MagiskDelta
+id=KSU_overlay_unmount
+name=KSU Unmount modules
+author=HuskyDG
 version=1.10.3
 versionCode=16
-description=Ptrace-based MagiskHide, allows hiding root without need to enable Zygisk. Read DenyList as hidelist. Android 11+ is recommended.
-updateJson=https://github.com/huskydg/magiskhide/releases/latest/download/update_~REPLACEME~.json
+description=Unmount modules for KernelSU on kernel lower than 5.9
+updateJson=https://github.com/huskydg/KSU_overlay_unmount/releases/latest/download/update_~REPLACEME~.json
