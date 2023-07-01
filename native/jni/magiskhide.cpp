@@ -84,6 +84,7 @@ static void kill_usap_zygote() {
 }
  
 static void update_uid_map() {
+#if 0
     const char *APP_DATA = APP_DATA_DIR;
     DIR *dirfp = opendir(APP_DATA);
     if (dirfp == nullptr)
@@ -128,7 +129,9 @@ static void update_uid_map() {
         }
         closedir(dirfp2);
     }
-    closedir(dirfp);    
+    closedir(dirfp);
+#endif
+    return;  
 }
 
 static inline int read_ns(const int pid, struct stat *st) {
@@ -374,7 +377,6 @@ static void detach_pid(int pid, int signal = 0) {
 
 static bool check_pid(int pid) {
     char path[128];
-    char cmdline[1024];
     struct stat st;
 
     sprintf(path, "/proc/%d", pid);
@@ -390,24 +392,10 @@ static bool check_pid(int pid) {
     if (uid == 0)
         return false;
 
-    sprintf(path, "/proc/%d/cmdline", pid);
-    if (auto f = fopen(path, "re")) {
-        fgets(cmdline, sizeof(cmdline), f);
-        fclose(f);
-    } else {
-        // Process died unexpectedly, ignore
-        detach_pid(pid);
-        return true;
-    }
-
-    if (cmdline == "zygote"sv || cmdline == "zygote32"sv || cmdline == "zygote64"sv ||
-        cmdline == "usap32"sv || cmdline == "usap64"sv || cmdline == "<pre-initialized>"sv)
-        return false;
-
-    PTRACE_LOG("cmdline=[%s]\n", cmdline);
-
-    if (!is_hide_target(uid, cmdline, 95))
+    if (is_hide_target(uid)) {
+       LOGI("proc_monitor: unmount PID=[%d] UID=[%d]\n", pid, uid);
         goto not_target;
+    }
 
     // Ensure ns is separated
     read_ns(pid, &st);
@@ -415,21 +403,20 @@ static bool check_pid(int pid) {
         if (zit.second.st_ino == st.st_ino &&
             zit.second.st_dev == st.st_dev) {
             // ns not separated, abort
-            LOGW("proc_monitor: skip [%s] PID=[%d] UID=[%d]\n", cmdline, pid, uid);
+            LOGW("proc_monitor: skip PID=[%d] UID=[%d]\n", pid, uid);
             goto not_target;
         }
     }
 
     // Detach but the process should still remain stopped
     // The hide daemon will resume the process after hiding it
-    LOGI("proc_monitor: [%s] PID=[%d] UID=[%d]\n", cmdline, pid, uid);
+    LOGI("proc_monitor: mount for PID=[%d] UID=[%d]\n", pid, uid);
     detach_pid(pid);
     kill(pid, SIGSTOP);
-    hide_daemon(pid);
+    mount_daemon(pid);
     return true;
 
 not_target:
-    PTRACE_LOG("[%s] is not our target\n", cmdline);
     detach_pid(pid);
     return true;
 }
@@ -460,8 +447,8 @@ static bool is_process(int pid, int uid) {
 }
 
 static void new_zygote(int pid) {
-    struct stat st;
-    if (read_ns(pid, &st))
+    struct stat st, init_st;
+    if (read_ns(pid, &st) || read_ns(1, &init_st) || (init_st.st_ino == st.st_ino && init_st.st_dev == st.st_dev))
         return;
 
     auto it = zygote_map.find(pid);
@@ -484,6 +471,7 @@ static void new_zygote(int pid) {
     xptrace(PTRACE_SETOPTIONS, pid, nullptr,
             PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXIT);
     xptrace(PTRACE_CONT, pid);
+    hide_daemon(pid);
 }
 
 #define DETACH_AND_CONT { detach_pid(pid); continue; }
@@ -533,8 +521,6 @@ void do_check_fork() {
     for (int i = 0; i < 10000 && ptrace(PTRACE_ATTACH, pid) < 0; i++)
         usleep(100);
     PTRACE_LOG("pass to thread\n");
-    bool allow = false;
-    bool checked = false;
     pid_list.emplace_back(pid);
     waitpid(pid, 0, 0);
     xptrace(PTRACE_SETOPTIONS, pid, nullptr, PTRACE_O_TRACESYSGOOD);
@@ -544,43 +530,12 @@ void do_check_fork() {
         if (wait_for_syscall(pid) != 0)
             break;
         {
-            if (checked) goto CHECK_PROC;
             sprintf(path, "/proc/%d", pid);
             stat(path, &st);
             PTRACE_LOG("UID=[%d]\n", st.st_uid);
             if (st.st_uid == 0)
                 continue;
-            if ((st.st_uid % 100000) >= 90000) {
-                PTRACE_LOG("is isolated process\n");
-                goto CHECK_PROC;
-            }
-            // check if UID is on list
-            {
-                bool found = false;
-                auto it = uid_proc_map.find(st.st_uid % 100000);
-                // not found in map
-                if (it == uid_proc_map.end())
-                    break;
-                for (int i = 0; i < it->second.size(); i++) {
-                    if (find_proc_from_pkg(it->second[i].data(), it->second[i].data(), true)) {
-                        found = true;
-                        break;
-                    }
-                }
-                // not found in database
-                if (!found) break;
-            }
-
-            CHECK_PROC:
-            checked = true;
-            if (!allow && (
-                 // app zygote
-                 strstr(get_content(pid, "attr/current").data(), "u:r:app_zygote:s0") ||
-                 // until pre-initialized
-                 get_content(pid, "cmdline") == "<pre-initialized>"))
-                 allow = true;
-            if (allow && check_pid(pid))
-                break;
+            if (check_pid(pid)) break;
         }
     }
     // just in case
@@ -593,6 +548,7 @@ void do_check_fork() {
 
 void proc_monitor() {
     monitor_thread = pthread_self();
+    prepare_modules();
 
     // Backup original mask
     sigset_t orig_mask;

@@ -29,7 +29,7 @@ jobs:
     - name: Upload release
       uses: actions/upload-artifact@v3
       with:
-        name: magiskhide-release
+        name: ksu-unmount-modules-release
         path: out/magisk-module
     - name: Build debug
       run: |
@@ -38,5 +38,5 @@ jobs:
     - name: Upload debug
       uses: actions/upload-artifact@v3
       with:
-        name: magiskhide-debug
+        name: ksu-unmount-modules-debug
         path: out/magisk-module

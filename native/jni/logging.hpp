@@ -2,7 +2,7 @@
 #include <android/log.h>
 #include <errno.h>
 #include "debug.hpp"
-#define LOG_TAG "MagiskHide"
+#define LOG_TAG "KSUHide"
 
 extern int log_fd;
 
