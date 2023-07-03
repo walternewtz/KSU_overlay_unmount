@@ -109,6 +109,11 @@ int main(int argc, char **argv) {
         log_fd = open("/cache/ksu_umount.log", O_RDWR | O_CREAT | O_APPEND, 0666);
 
         LOGI("** Hide daemon started\n");
+        struct stat modules_st{}, data_st{};
+        stat("/data", &data_st);
+        stat("/data/adb/modules", &modules_st);
+        if (data_st.st_dev != modules_st.st_dev)
+            worker_dev = modules_st.st_dev;
 
         signal(SIGTERM, SIG_IGN);
         signal(SIGUSR1, SIG_IGN);

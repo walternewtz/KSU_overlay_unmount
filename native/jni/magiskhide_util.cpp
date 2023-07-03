@@ -3,7 +3,6 @@
 #include <vector>
 #include <sys/mount.h>
 #include <iostream>
-#include <iostream>
 #include <string_view>
 #include <string>
 #include <sys/poll.h>
@@ -11,9 +10,10 @@
 #include <sys/stat.h>
 #include <algorithm>
 #include <sys/prctl.h>
-#include <vector>
 #include <sys/types.h>
 #include <dirent.h>
+#include <set>
+#include <vector>
 
 #include "magiskhide_util.hpp"
 #include "utils.hpp"
@@ -53,22 +53,28 @@ void hide_unmount(int pid) {
             return;
         LOGD("hide: handling PID=[%d]\n", pid);
     }
-    std::vector<std::string> targets;
+    std::set<std::string> targets;
 
     // unmount KSU node
     for (auto &info: parse_mount_info("self")) {
-        if (info.source == "KSU") {
-            targets.push_back(info.target);
+        if (info.source == "KSU" || info.device == worker_dev) {
+            targets.insert(info.target);
         }
     }
-    for (auto &s : reversed(targets))
-        lazy_unmount(s.data());
-    targets.clear();
-
     // unmount everything under /data/adb
     for (auto &info: parse_mount_info("self")) {
         if (starts_with(info.target.data(), "/data/adb/")) {
-            targets.push_back(info.target);
+            targets.insert(info.target);
+        }
+    }
+    if (targets.empty()) return;
+
+    auto last_target = *targets.cbegin() + '/';
+    for (auto iter = next(targets.cbegin()); iter != targets.cend();) {
+        if (starts_with((*iter).data(), last_target.data())) {
+            iter = targets.erase(iter);
+        } else {
+            last_target = *iter++ + '/';
         }
     }
     for (auto &s : reversed(targets))
@@ -84,8 +90,9 @@ void hide_daemon(int pid) {
 }
 
 void mount_daemon(int pid) {
+	if (worker_dev == 0)
+	    return;
     struct stat st;
-    stat("/data/adb/modules", &st);
     int mount_child = fork();
     if (mount_child > 0) waitpid(mount_child, nullptr, 0);
     else if (mount_child == 0) {
@@ -93,7 +100,7 @@ void mount_daemon(int pid) {
             !mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr) &&
             !mount("tmpfs", "/mnt", "tmpfs", 0, nullptr) &&
             !chdir("/mnt") &&
-            !mknod("/mnt/KSU", S_IFBLK, st.st_dev) &&
+            !mknod("/mnt/KSU", S_IFBLK, worker_dev) &&
             !mount("KSU", "/data/adb/modules", "ext4", 0, nullptr)) {
             umount2("/mnt", MNT_DETACH);
             const char *parts[] = { "/system", "/vendor", "/product", "/system_ext", nullptr };
