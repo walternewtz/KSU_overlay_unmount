@@ -1,3 +1,3 @@
 ## KSU Overlay Unmount
 
-- Unmount KSU Overlay on Kernel lower than 5.9
+- Unmount modules function for KernelSU. It is also mounting writeable systemless hosts for Adaway
