@@ -92,8 +92,9 @@ void mount_daemon(int pid) {
         if (switch_mnt_ns(pid) == 0 &&
             !mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr) &&
             !mount("tmpfs", "/mnt", "tmpfs", 0, nullptr) &&
-            !mknod("/mnt/ksu_modules_dev", S_IFBLK, st.st_dev) &&
-            !mount("/mnt/ksu_modules_dev", "/data/adb/modules", "ext4", 0, nullptr)) {
+            !chdir("/mnt") &&
+            !mknod("/mnt/KSU", S_IFBLK, st.st_dev) &&
+            !mount("KSU", "/data/adb/modules", "ext4", 0, nullptr)) {
             umount2("/mnt", MNT_DETACH);
             const char *parts[] = { "/system", "/vendor", "/product", "/system_ext", nullptr };
             for (int pos = 0; parts[pos] != nullptr; pos++) {
