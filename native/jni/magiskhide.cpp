@@ -31,7 +31,6 @@ std::map<int, std::vector<std::string>> uid_proc_map;
 pthread_t monitor_thread;
 
 static int fork_pid = -1;
-static int system_server_pid = -1;
 static bool is_process(int pid, int uid = 0);
 
 #include "procfp.hpp"
@@ -140,20 +139,6 @@ static inline int read_ns(const int pid, struct stat *st) {
     return stat(path, st);
 }
 
-static bool is_proc_alive(int pid) {
-    auto it = pid_map.find(pid);
-    char path[128];
-    struct stat st;
-    sprintf(path, "/proc/%d", pid);
-    if (stat(path, &st))
-        return false;
-    if (it != pid_map.end() &&
-        it->second.st_dev == st.st_dev &&
-        it->second.st_ino == st.st_ino)
-        return true;
-    return false;
-}
-
 static bool is_zygote_done() {
     return zygote_map.size() >= 1;
 }
@@ -231,16 +216,12 @@ static bool check_map(int pid) {
 
 static void check_zygote() {
     crawl_procfs([](int pid) -> bool {
-        if (!is_process(pid) && !is_process(pid, 1000))
+        if (!is_process(pid))
             goto not_zygote;
 
-        if (is_zygote(pid) && parse_ppid(pid) == 1 && system_server_pid > 0) {
+        if (is_zygote(pid) && parse_ppid(pid) == 1) {
             new_zygote(pid);
             return true;
-        }
-        if (check_process2(pid, "system_server", "u:r:system_server:s0", nullptr)
-            && is_zygote(parse_ppid(pid)) && check_map(pid)) {
-            system_server_pid = pid;
         }
 
         not_zygote:
@@ -336,7 +317,6 @@ static void term_thread(int) {
     close(inotify_fd);
     inotify_fd = -1;
     fork_pid = -1;
-    system_server_pid = -1;
     for (int i = 0; i < pid_list.size(); i++) {
         LOGD("proc_monitor: kill PID=[%d]\n", pid_list[i]);
         kill(pid_list[i], SIGKILL);
@@ -535,9 +515,24 @@ void do_check_fork() {
         if (wait_for_syscall(pid) != 0)
             break;
         {
+            auto con = get_content(pid, "attr/current");
+            if (con == "u:r:zygote:s0")
+                continue;
+            if (con == "u:r:system_server:s0") {
+                LOGI("proc_monitor: system_server PID=[%d]\n", pid);
+                read_ns(pid, &st);
+                for (auto &zit : zygote_map) {
+                    if (zit.second.st_ino == st.st_ino &&
+                        zit.second.st_dev == st.st_dev) {
+                        goto finally;
+                    }
+                }
+                mount_daemon(pid);
+                finally:
+                break;
+            }
             sprintf(path, "/proc/%d", pid);
             stat(path, &st);
-            PTRACE_LOG("UID=[%d]\n", st.st_uid);
             if (st.st_uid != 0) {
                 check_pid(pid, st.st_uid);
                 break;
@@ -589,32 +584,17 @@ void proc_monitor() {
     setup_inotify();
     attaches.reset();
 
-    // First try find existing system server
+    // First try find existing zygote
     check_zygote();
+    kill_usap_zygote();
+    update_uid_map();
 
-    start_monitor:
-    pthread_sigmask(SIG_UNBLOCK, &unblock_set, nullptr);
-    // wait until system_server start
-    while (system_server_pid == -1)
-        sleep(1);
-    if (!is_proc_alive(system_server_pid)) {
-        system_server_pid = -1;
-        pid_map.clear();
-        goto start_monitor;
-    }
-    // now ptrace zygote
-    LOGI("proc_monitor: system server PID=[%d]\n", system_server_pid);
-    pthread_sigmask(SIG_SETMASK, &orig_mask, nullptr);
-    // First try find existing zygotes
-    check_zygote();
     if (!is_zygote_done()) {
         // Periodic scan every 250ms
         timeval val { .tv_sec = 0, .tv_usec = 250000 };
         itimerval interval { .it_interval = val, .it_value = val };
         setitimer(ITIMER_REAL, &interval, nullptr);
     }
-    update_uid_map();
-    kill_usap_zygote();
 
     for (int status;;) {
         pthread_sigmask(SIG_UNBLOCK, &unblock_set, nullptr);
@@ -629,7 +609,6 @@ void proc_monitor() {
                     .tv_nsec = 0
                 };
                 nanosleep(&ts, nullptr);
-                goto start_monitor;
             }
             continue;
         }
