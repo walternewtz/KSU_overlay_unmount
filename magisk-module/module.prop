@@ -1,7 +1,7 @@
 id=KSU_overlay_unmount
 name=KernelSU Unmount modules
 author=HuskyDG
-version=1.11.1
-versionCode=18
+version=1.11.2
+versionCode=19
 description=Unmount modules function from sensitive apps for KernelSU
 updateJson=https://github.com/huskydg/KSU_overlay_unmount/releases/latest/download/update_~REPLACEME~.json
