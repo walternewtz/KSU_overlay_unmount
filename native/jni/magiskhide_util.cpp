@@ -89,6 +89,14 @@ void hide_daemon(int pid) {
     }
 }
 
+int overlay_main(int argc, char **argv);
+
+static int get_argc(char **argv) {
+    int argc = 0;
+    for (int i = 0; argv[i]; i++) argc++;
+    return argc;
+}
+
 void mount_daemon(int pid) {
 	if (worker_dev == 0)
 	    return;
@@ -121,7 +129,7 @@ void mount_daemon(int pid) {
                         if (mount_list.size() >= 1) {
                             // /data/adb/modules/KSU_overlay_unmount/magic-mount -rn KSU MNT PART PART
                             char *argc_exec[7+mount_list.size()];
-                            argc_exec[0] = "/data/adb/modules/KSU_overlay_unmount/magic-mount";
+                            argc_exec[0] = "magic-mount";
                             argc_exec[1] = "-rn";
                             argc_exec[2] = "KSU";
                             for (int i = 0; i < mount_list.size(); i++)
@@ -130,7 +138,7 @@ void mount_daemon(int pid) {
                             argc_exec[4 + mount_list.size()] = (char*)part;
                             argc_exec[5 + mount_list.size()] = nullptr;
                             LOGD("mount_daemon: PID=[%d] partition=[%s]\n", pid, part);
-                            execv(argc_exec[0], argc_exec);
+                            overlay_main(get_argc(argc_exec), argc_exec);
                         }
                     }
                     _exit(0);

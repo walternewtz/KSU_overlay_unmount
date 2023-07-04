@@ -15,7 +15,3 @@ fi
 ui_print "- Enable systemless hosts"
 mkdir -p "$MODPATH/system/etc"
 cp -af /system/etc/hosts "$MODPATH/system/etc"
-
-ui_print "- Install magic-mount"
-cp -af "$MODPATH/libs/$ABI/magic-mount" "$MODPATH/magic-mount"
-rm -rf "$MODPATH/libs"
