@@ -375,7 +375,7 @@ static void detach_pid(int pid, int signal = 0) {
     PTRACE_LOG("detach\n");
 }
 
-static bool check_pid(int pid) {
+static void check_pid(int pid, int uid) {
     char path[128];
     struct stat st;
     string pkg = "unknown";
@@ -384,15 +384,10 @@ static bool check_pid(int pid) {
     if (stat(path, &st)) {
         // Process died unexpectedly, ignore
         detach_pid(pid);
-        return true;
+        return;
     }
 
-    int uid = st.st_uid;
-
-    // UID hasn't changed
-    if (uid == 0)
-        return false;
-    if (auto it = uid_proc_map.find(st.st_uid % 100000); it != uid_proc_map.end() && (*it).second.size() == 1) {
+    if (auto it = uid_proc_map.find(uid % 100000); it != uid_proc_map.end() && (*it).second.size() == 1) {
         pkg = string((*it).second[0]);
     }
 
@@ -424,11 +419,11 @@ static bool check_pid(int pid) {
     // TODO: inject
     
     detach_pid(pid);
-    return true;
+    return;
 
 not_target:
     detach_pid(pid);
-    return true;
+    return;
 }
 
 static bool is_process(int pid, int uid) {
@@ -471,16 +466,16 @@ static void new_zygote(int pid) {
     if (!check_map(pid))
         return;
 
-    LOGD("proc_monitor: zygote PID=[%d]\n", pid);
     zygote_map[pid] = st;
 
     LOGD("proc_monitor: ptrace zygote PID=[%d]\n", pid);
     xptrace(PTRACE_ATTACH, pid);
 
-    waitpid(pid, nullptr, __WALL | __WNOTHREAD);
+    if (waitpid(pid, nullptr, __WALL | __WNOTHREAD) == -1) return;
     xptrace(PTRACE_SETOPTIONS, pid, nullptr,
             PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXIT);
     xptrace(PTRACE_CONT, pid);
+    LOGD("proc_monitor: ptrace success, unload modules from zygote PID=[%d]\n", pid);
     hide_daemon(pid);
 }
 
@@ -543,9 +538,10 @@ void do_check_fork() {
             sprintf(path, "/proc/%d", pid);
             stat(path, &st);
             PTRACE_LOG("UID=[%d]\n", st.st_uid);
-            if (st.st_uid == 0)
-                continue;
-            if (check_pid(pid)) break;
+            if (st.st_uid != 0) {
+                check_pid(pid, st.st_uid);
+                break;
+            }
         }
     }
     // just in case
