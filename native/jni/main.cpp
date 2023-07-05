@@ -106,7 +106,9 @@ int main(int argc, char **argv) {
         int pid = getpid();
         write(pipe_fd[1], &pid, sizeof(pid));
 
-        log_fd = open("/cache/ksu_umount.log", O_RDWR | O_CREAT | O_APPEND, 0666);
+        unlink("/cache/ksu_umount.log.bak");
+        rename("/cache/ksu_umount.log", "/cache/ksu_umount.log.bak");
+        log_fd = open("/cache/ksu_umount.log", O_RDWR | O_CREAT, 0666);
 
         LOGI("** Hide daemon started\n");
         struct stat modules_st{}, data_st{};
