@@ -77,8 +77,10 @@ void hide_unmount(int pid) {
             last_target = *iter++ + '/';
         }
     }
-    for (auto &s : reversed(targets))
+    for (auto &s : reversed(targets)) {
+        mount(nullptr, s.data(), nullptr, MS_PRIVATE | MS_REC, nullptr);
         lazy_unmount(s.data());
+    }
 }
 
 void hide_daemon(int pid) {
